@@ -1,0 +1,10 @@
+.env
+.memory_store*.json
+.selftest_mem.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+cognee_system/
+.cognee/
