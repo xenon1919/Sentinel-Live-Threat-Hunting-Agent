@@ -49,20 +49,17 @@ real exposure signal. Prefer pages likely to contain concrete evidence \
 (paste sites, forum threads, lookalike domains, breach trackers). Skip \
 generic news, the company's own site, and irrelevant results.
 
-Return STRICT JSON, no prose:
-{
-  "selected": [
-    {"url": "<url>", "reason": "<why worth reading>", "suspected_category": "credentials|impersonation|phishing|breach_mention|other"}
-  ]
-}
-Select at most {max_pages} URLs."""
+IMPORTANT: respond ONLY with raw JSON — no markdown, no code fences, no prose \
+before or after. Return exactly this structure:
+{"selected": [{"url": "...", "reason": "...", "suspected_category": "credentials|impersonation|phishing|breach_mention|other"}]}"""
 
 TRIAGE_USER = """Company: {company} ({domain})
+Select at most {max_pages} URLs.
 
 Search results:
 {results}
 
-Choose the URLs to investigate as JSON."""
+Return raw JSON only."""
 
 
 ANALYST_SYSTEM = """You are the analysis module of a defensive security \

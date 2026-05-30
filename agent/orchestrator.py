@@ -129,10 +129,22 @@ class ExposureMonitorAgent:
         )
         try:
             triage = self._ask_json(
-                prompts.TRIAGE_SYSTEM.format(max_pages=self.settings.max_pages_to_fetch),
-                prompts.TRIAGE_USER.format(company=company, domain=domain, results=results_block),
+                prompts.TRIAGE_SYSTEM,
+                prompts.TRIAGE_USER.format(
+                    company=company,
+                    domain=domain,
+                    max_pages=self.settings.max_pages_to_fetch,
+                    results=results_block,
+                ),
             )
-            selected = triage.get("selected", [])[: self.settings.max_pages_to_fetch]
+            # "selected" is the standard key; "items" is the fallback when the
+            # LLM returned a bare list at the root (parse_json_response wraps it)
+            raw = triage.get("selected") or triage.get("items") or []
+            # normalise: items may be dicts {"url":...} or bare strings
+            selected = [
+                item if isinstance(item, dict) else {"url": item, "suspected_category": "other"}
+                for item in raw
+            ][: self.settings.max_pages_to_fetch]
         except Exception as exc:
             yield AgentEvent("error", f"Triage failed: {exc}")
             selected = [{"url": h["url"], "suspected_category": "other"} for h in all_hits[: self.settings.max_pages_to_fetch]]

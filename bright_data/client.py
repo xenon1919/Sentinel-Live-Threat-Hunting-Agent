@@ -40,7 +40,7 @@ class BrightDataConfig:
     api_key: str
     unlocker_zone: str
     serp_zone: str
-    timeout: int = 60
+    timeout: int = 90
 
 
 class BrightDataError(RuntimeError):

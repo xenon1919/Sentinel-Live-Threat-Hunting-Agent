@@ -17,10 +17,27 @@ The agent uses recall_known_urls to mark findings as NEW vs. previously seen.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import threading
 from pathlib import Path
-from typing import Iterable, List, Set
+from typing import List, Set
+
+
+def _run_async(coro) -> None:
+    """Run a coroutine safely whether or not an event loop is already running.
+
+    Streamlit owns an event loop on the main thread, so asyncio.run() raises
+    RuntimeError('This event loop is already running').  Spinning up a
+    dedicated daemon thread with its own fresh loop sidesteps that entirely.
+    """
+    def _worker():
+        asyncio.run(coro)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=60)
 
 
 class _LocalMemory:
@@ -62,29 +79,57 @@ class _CogneeMemory:
     """
 
     def __init__(self):
-        import cognee  # noqa: F401  (import-time check)
+        # ── Configure Cognee's LLM before the first import ──────────────────
+        # Cognee reads its LLM provider from these env vars.  We mirror the
+        # project's AIML_* settings so Cognee uses the same key/endpoint.
+        # dotenv has already been loaded by agent/config.py at startup.
+        api_key  = os.getenv("AIML_API_KEY", "")
+        base_url = os.getenv("AIML_BASE_URL", "")
+        model    = os.getenv("AIML_MODEL", "gpt-4o")
+
+        if api_key:
+            os.environ.setdefault("OPENAI_API_KEY", api_key)
+            os.environ.setdefault("LLM_API_KEY",    api_key)
+        if base_url:
+            os.environ.setdefault("LLM_ENDPOINT",    base_url)
+            os.environ.setdefault("OPENAI_BASE_URL", base_url)
+        if model:
+            os.environ.setdefault("LLM_MODEL", model)
+
+        # Also try the async config API as a belt-and-suspenders measure
+        import cognee
+
+        async def _configure():
+            try:
+                await cognee.config.set_llm_config({
+                    "llm_provider": "openai",
+                    "llm_api_key":  api_key,
+                    "llm_model":    model,
+                    "llm_endpoint": base_url,
+                })
+            except Exception:
+                pass  # env vars above are the primary mechanism
+
+        _run_async(_configure())
 
         self._cognee = cognee
-        self._local = _LocalMemory(".memory_store_cognee.json")
+        self._local  = _LocalMemory(".memory_store_cognee.json")
 
     def recall_known_urls(self, company: str) -> Set[str]:
         return self._local.recall_known_urls(company)
 
     def remember_findings(self, company: str, findings: List[dict]) -> None:
-        # exact URL set for diffing
         self._local.remember_findings(company, findings)
-        # semantic memory for the prize / richer recall
-        try:
-            import asyncio
 
+        try:
             text = self._render(company, findings)
 
             async def _store():
                 await self._cognee.add(text)
                 await self._cognee.cognify()
 
-            asyncio.run(_store())
-        except Exception as exc:  # never let memory crash a scan
+            _run_async(_store())
+        except Exception as exc:
             print(f"[memory] Cognee store skipped: {exc}")
 
     @staticmethod
